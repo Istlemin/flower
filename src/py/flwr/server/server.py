@@ -183,6 +183,8 @@ class Server:
             len(results),
             len(failures),
         )
+        results.sort(key=lambda res:res[0].cid)
+        failures.sort(key=lambda fail:fail[0].cid if type(fail)==tuple else -1)
 
         # Aggregate the evaluation results
         aggregated_result: Tuple[
@@ -233,6 +235,8 @@ class Server:
             len(results),
             len(failures),
         )
+        results.sort(key=lambda res:res[0].cid)
+        failures.sort(key=lambda fail:fail[0].cid if type(fail)==tuple else -1)
 
         # Aggregate training results
         aggregated_result: Tuple[

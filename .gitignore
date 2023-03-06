@@ -12,6 +12,7 @@ node_modules
 # Flower Examples
 examples/**/dataset/**
 examples/**/dev/*.sh
+determinism_test/mnist/**
 
 # Flower Baselines
 baselines/datasets/leaf
