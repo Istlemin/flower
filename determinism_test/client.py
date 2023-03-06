@@ -123,7 +123,7 @@ def get_client_generator(train_dataloaders, val_dataloaders):
     def get_client_from_cid(cid: str) -> fl.client.NumPyClient:
         assert int(cid) < len(train_dataloaders), "Client ID out of range"
         assert int(cid) < len(val_dataloaders), "Client ID out of range"
-
+        seed_everything(int(cid))
         return FlowerNumpyClient(
             cid,
             Net(),
