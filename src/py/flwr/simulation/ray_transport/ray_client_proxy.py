@@ -20,7 +20,6 @@ from logging import DEBUG
 from typing import Callable, Dict, Optional, cast
 
 import ray
-
 from flwr import common
 from flwr.client import Client, ClientLike, to_client
 from flwr.client.client import (
@@ -43,7 +42,7 @@ class RayClientProxy(ClientProxy):
     def __init__(
         self,
         client_fn: ClientFn,
-        seed_fn: Callable[[int], None],
+        seed_fn: Optional[Callable[[int], None]],
         cid: str,
         resources: Dict[str, float],
     ):
@@ -52,27 +51,31 @@ class RayClientProxy(ClientProxy):
         self.seed_fn = seed_fn
         self.resources = resources
 
-        # Create a RNG for this client, seeded using the global RNG
-        seed = random.randint(0, MAX_SEED_SIZE)
-        self.rng = random.Random()
-        self.rng.seed(seed)
+        if self.seed_fn is not None:
+            # Create a RNG for this client, seeded using the global RNG
+            seed = random.randint(0, MAX_SEED_SIZE)
+            self.rng = random.Random()
+            self.rng.seed(seed)
+        else:
+            self.rng = None
 
     def _get_current_seed_fn(self):
-        seed = self.rng.randint(0, MAX_SEED_SIZE)
-        return lambda: self.seed_fn(seed)
+        if self.seed_fn is None:
+            return None
+        else:
+            seed = self.rng.randint(0, MAX_SEED_SIZE)
+            return lambda: self.seed_fn(seed)
+
+    def _get_client_fn(self):
+        return lambda: self.client_fn(self.cid)
 
     def get_properties(
         self, ins: common.GetPropertiesIns, timeout: Optional[float]
     ) -> common.GetPropertiesRes:
         """Returns client's properties."""
-        future_get_properties_res = launch_and_get_properties.options(  # type: ignore
-            **self.resources,
-        ).remote(self.client_fn, self._get_current_seed_fn(), self.cid, ins)
-        try:
-            res = ray.get(future_get_properties_res, timeout=timeout)
-        except Exception as ex:
-            log(DEBUG, ex)
-            raise ex
+        res = self._execute_deterministically_using_ray(
+            maybe_call_get_properties, timeout, get_properties_ins=ins
+        )
         return cast(
             common.GetPropertiesRes,
             res,
@@ -82,14 +85,9 @@ class RayClientProxy(ClientProxy):
         self, ins: common.GetParametersIns, timeout: Optional[float]
     ) -> common.GetParametersRes:
         """Return the current local model parameters."""
-        future_paramseters_res = launch_and_get_parameters.options(  # type: ignore
-            **self.resources,
-        ).remote(self.client_fn, self._get_current_seed_fn(), self.cid, ins)
-        try:
-            res = ray.get(future_paramseters_res, timeout=timeout)
-        except Exception as ex:
-            log(DEBUG, ex)
-            raise ex
+        res = self._execute_deterministically_using_ray(
+            maybe_call_get_parameters, timeout, get_parameters_ins=ins
+        )
         return cast(
             common.GetParametersRes,
             res,
@@ -97,14 +95,9 @@ class RayClientProxy(ClientProxy):
 
     def fit(self, ins: common.FitIns, timeout: Optional[float]) -> common.FitRes:
         """Train model parameters on the locally held dataset."""
-        future_fit_res = launch_and_fit.options(  # type: ignore
-            **self.resources,
-        ).remote(self.client_fn, self._get_current_seed_fn(), self.cid, ins)
-        try:
-            res = ray.get(future_fit_res, timeout=timeout)
-        except Exception as ex:
-            log(DEBUG, ex)
-            raise ex
+        res = self._execute_deterministically_using_ray(
+            maybe_call_fit, timeout, fit_ins=ins
+        )
         return cast(
             common.FitRes,
             res,
@@ -114,14 +107,9 @@ class RayClientProxy(ClientProxy):
         self, ins: common.EvaluateIns, timeout: Optional[float]
     ) -> common.EvaluateRes:
         """Evaluate model parameters on the locally held dataset."""
-        future_evaluate_res = launch_and_evaluate.options(  # type: ignore
-            **self.resources,
-        ).remote(self.client_fn, self._get_current_seed_fn(), self.cid, ins)
-        try:
-            res = ray.get(future_evaluate_res, timeout=timeout)
-        except Exception as ex:
-            log(DEBUG, ex)
-            raise ex
+        res = self._execute_deterministically_using_ray(
+            maybe_call_evaluate, timeout, evaluate_ins=ins
+        )
         return cast(
             common.EvaluateRes,
             res,
@@ -133,69 +121,36 @@ class RayClientProxy(ClientProxy):
         """Disconnect and (optionally) reconnect later."""
         return common.DisconnectRes(reason="")  # Nothing to do here (yet)
 
+    def _execute_deterministically_using_ray(
+        self,
+        fn: Callable[[], None],
+        timeout: Optional[float],
+        *args,
+        **kwargs,
+    ):
+        """Execute the given function deterministically using Ray."""
+        future_fn_res = call_ray_with_seeded_client.options(  # type: ignore
+            **self.resources,
+        ).remote(
+            self._get_client_fn(), self._get_current_seed_fn(), fn, *args, **kwargs
+        )
+        try:
+            return ray.get(future_fn_res, timeout=timeout)
+        except Exception as ex:
+            log(DEBUG, ex)
+            raise ex
+
 
 @ray.remote
-def launch_and_get_properties(
+def call_ray_with_seeded_client(
     client_fn: ClientFn,
-    seed_fn: Callable[[], None],
-    cid: str,
-    get_properties_ins: common.GetPropertiesIns,
-) -> common.GetPropertiesRes:
-    """Execute get_properties remotely."""
-    seed_fn()
-    client: Client = _create_client(client_fn, cid)
-    return maybe_call_get_properties(
-        client=client,
-        get_properties_ins=get_properties_ins,
-    )
-
-
-@ray.remote
-def launch_and_get_parameters(
-    client_fn: ClientFn,
-    seed_fn: Callable[[], None],
-    cid: str,
-    get_parameters_ins: common.GetParametersIns,
-) -> common.GetParametersRes:
-    """Execute get_parameters remotely."""
-    seed_fn()
-    client: Client = _create_client(client_fn, cid)
-    return maybe_call_get_parameters(
-        client=client,
-        get_parameters_ins=get_parameters_ins,
-    )
-
-
-@ray.remote
-def launch_and_fit(
-    client_fn: ClientFn, seed_fn: Callable[[], None], cid: str, fit_ins: common.FitIns
+    seed_fn: Optional[Callable[[], None]],
+    fn: Callable[[Client], common.FitRes],
+    *args,
+    **kwargs,
 ) -> common.FitRes:
-    """Exectue fit remotely."""
-    seed_fn()
-    client: Client = _create_client(client_fn, cid)
-    return maybe_call_fit(
-        client=client,
-        fit_ins=fit_ins,
-    )
-
-
-@ray.remote
-def launch_and_evaluate(
-    client_fn: ClientFn,
-    seed_fn: Callable[[], None],
-    cid: str,
-    evaluate_ins: common.EvaluateIns,
-) -> common.EvaluateRes:
-    """Exectue evaluate remotely."""
-    seed_fn()
-    client: Client = _create_client(client_fn, cid)
-    return maybe_call_evaluate(
-        client=client,
-        evaluate_ins=evaluate_ins,
-    )
-
-
-def _create_client(client_fn: ClientFn, cid: str) -> Client:
-    """Create a client instance."""
-    client_like: ClientLike = client_fn(cid)
-    return to_client(client_like=client_like)
+    """Execute the given function remotely."""
+    if seed_fn is not None:
+        seed_fn()
+    client: Client = to_client(client_like=client_fn())
+    return fn(client, *args, **kwargs)
