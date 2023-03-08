@@ -53,7 +53,7 @@ ReconnectResultsAndFailures = Tuple[
 ]
 
 
-def deterministic_order(
+def deterministic_random_order(
     results: List[Tuple[ClientProxy, EvaluateRes]],
     failures: List[Union[Tuple[ClientProxy, EvaluateRes], BaseException]],
 ) -> EvaluateResultsAndFailures:
@@ -197,12 +197,10 @@ class Server:
             len(results),
             len(failures),
         )
-        results.sort(key=lambda res: res[0].cid)
-        failures.sort(key=lambda fail: fail[0].cid if type(fail) == tuple else -1)
 
         # Clients may finish in nondeterministic order.
-        # For repruducability, order them using the seeded global RNG instead.
-        results, failures = deterministic_order(results, failures)
+        # For reproducibility, order them using the seeded global RNG instead.
+        results, failures = deterministic_random_order(results, failures)
         # Aggregate the evaluation results
         aggregated_result: Tuple[
             Optional[float],
@@ -254,8 +252,8 @@ class Server:
         )
 
         # Clients may finish in nondeterministic order.
-        # For repruducability, order them using the seeded global RNG instead.
-        results, failures = deterministic_order(results, failures)
+        # For reproducibility, order them using the seeded global RNG instead.
+        results, failures = deterministic_random_order(results, failures)
 
         # Aggregate training results
         aggregated_result: Tuple[
