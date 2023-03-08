@@ -18,6 +18,7 @@
 import sys
 from logging import ERROR, INFO
 from typing import Any, Callable, Dict, List, Optional
+import random
 
 import ray
 
@@ -62,6 +63,8 @@ REASON:
 def start_simulation(  # pylint: disable=too-many-arguments
     *,
     client_fn: Callable[[str], Client],
+    seed_fn: Callable[[int], None],
+    seed: int,
     num_clients: Optional[int] = None,
     clients_ids: Optional[List[str]] = None,
     client_resources: Optional[Dict[str, float]] = None,
@@ -182,11 +185,18 @@ def start_simulation(  # pylint: disable=too-many-arguments
         ray.cluster_resources(),
     )
 
+    # Set seed for everything running in main thread
+    seed_fn(seed)
+
+    # Set seed for random sampling
+    random.seed(seed)
+
     # Register one RayClientProxy object for each client with the ClientManager
     resources = client_resources if client_resources is not None else {}
     for cid in cids:
         client_proxy = RayClientProxy(
             client_fn=client_fn,
+            seed_fn=seed_fn,
             cid=cid,
             resources=resources,
         )

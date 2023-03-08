@@ -19,6 +19,7 @@ import concurrent.futures
 import timeit
 from logging import DEBUG, INFO
 from typing import Dict, List, Optional, Tuple, Union
+import random
 
 from flwr.common import (
     Code,
@@ -51,6 +52,15 @@ ReconnectResultsAndFailures = Tuple[
     List[Union[Tuple[ClientProxy, DisconnectRes], BaseException]],
 ]
 
+def deterministic_order(
+        results : List[Tuple[ClientProxy, EvaluateRes]],
+        failures: List[Union[Tuple[ClientProxy, EvaluateRes], BaseException]]
+    ) -> EvaluateResultsAndFailures:
+    results = sorted(results,key=lambda res:res[0].cid)
+    failures = sorted(failures, key=lambda fail:fail[0].cid if type(fail)==tuple else -1)
+    random.shuffle(results)
+    random.shuffle(failures)
+    return results,failures
 
 class Server:
     """Flower server."""
@@ -184,6 +194,9 @@ class Server:
             len(failures),
         )
 
+        # Clients may finish in nondeterministic order.
+        # For repruducability, order them using the seeded global RNG instead.
+        results,failures = deterministic_order(results,failures)
         # Aggregate the evaluation results
         aggregated_result: Tuple[
             Optional[float],
@@ -233,6 +246,10 @@ class Server:
             len(results),
             len(failures),
         )
+        
+        # Clients may finish in nondeterministic order.
+        # For repruducability, order them using the seeded global RNG instead.
+        results,failures = deterministic_order(results,failures)
 
         # Aggregate training results
         aggregated_result: Tuple[
