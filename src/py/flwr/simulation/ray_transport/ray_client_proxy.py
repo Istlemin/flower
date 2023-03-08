@@ -17,7 +17,7 @@
 
 import random
 from logging import DEBUG
-from typing import Any, Callable, Dict, Optional, cast
+from typing import Any, Callable, Dict, Optional, Type, cast
 
 import ray
 
@@ -52,12 +52,15 @@ class RayClientProxy(ClientProxy):
         self.remote_client_proxy = _RemoteRayClientProxy.options(**resources).remote(
             client_fn,
             cid,
-            seed_fn,
-            seed,
+            seed_fn=seed_fn,
+            seed=seed,
         )
 
     def _get_ray_future(
-        self, ray_future, timeout: Optional[float] = None, type=None
+        self,
+        ray_future: ray.ObjectRef,
+        timeout: Optional[float] = None,
+        type: Optional[Type] = None,
     ) -> Any:
         try:
             res = ray.get(ray_future, timeout=timeout)
@@ -128,8 +131,8 @@ class _RemoteRayClientProxy(ClientProxy):
         self,
         client_fn: ClientFn,
         cid: str,
-        seed_fn: Optional[Callable[[int], None]],
-        seed: int,
+        seed_fn: Optional[Callable[[int], None]] = None,
+        seed: Optional[int] = None,
     ):
         super().__init__(cid)
         self.client_fn = client_fn
