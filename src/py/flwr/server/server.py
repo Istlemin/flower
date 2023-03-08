@@ -193,6 +193,8 @@ class Server:
             len(results),
             len(failures),
         )
+        results.sort(key=lambda res:res[0].cid)
+        failures.sort(key=lambda fail:fail[0].cid if type(fail)==tuple else -1)
 
         # Clients may finish in nondeterministic order.
         # For repruducability, order them using the seeded global RNG instead.

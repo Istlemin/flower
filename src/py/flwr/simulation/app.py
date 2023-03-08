@@ -202,6 +202,20 @@ def start_simulation(  # pylint: disable=too-many-arguments
         )
         initialized_server.client_manager().register(client=client_proxy)
 
+
+    def seed_everything(seed):
+        import numpy as np
+        import torch
+        import random
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True)
+    import random
+    seed_everything(random.randint(0,100000))
+
     # Start training
     hist = _fl(
         server=initialized_server,
