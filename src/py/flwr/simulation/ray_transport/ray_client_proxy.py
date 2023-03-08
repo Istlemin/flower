@@ -17,11 +17,12 @@
 
 import random
 from logging import DEBUG
-from typing import Callable, Dict, Optional, cast
+from typing import Any, Callable, Dict, Optional, cast
 
 import ray
+
 from flwr import common
-from flwr.client import Client, ClientLike, to_client
+from flwr.client import ClientLike, to_client
 from flwr.client.client import (
     maybe_call_evaluate,
     maybe_call_fit,
@@ -47,110 +48,135 @@ class RayClientProxy(ClientProxy):
         resources: Dict[str, float],
     ):
         super().__init__(cid)
-        self.client_fn = client_fn
-        self.seed_fn = seed_fn
-        self.resources = resources
+        seed = random.randint(0, MAX_SEED_SIZE) if seed_fn is not None else None
+        self.remote_client_proxy = _RemoteRayClientProxy.options(**resources).remote(
+            client_fn,
+            cid,
+            seed_fn,
+            seed,
+        )
 
-        if self.seed_fn is not None:
-            # Create a RNG for this client, seeded using the global RNG
-            seed = random.randint(0, MAX_SEED_SIZE)
-            self.rng = random.Random()
-            self.rng.seed(seed)
-        else:
-            self.rng = None
-
-    def _get_current_seed_fn(self):
-        if self.seed_fn is None:
-            return None
-        else:
-            seed = self.rng.randint(0, MAX_SEED_SIZE)
-            return lambda: self.seed_fn(seed)
-
-    def _get_client_fn(self):
-        return lambda: self.client_fn(self.cid)
+    def _get_ray_future(
+        self, ray_future, timeout: Optional[float] = None, type=None
+    ) -> Any:
+        try:
+            res = ray.get(ray_future, timeout=timeout)
+            if type is not None:
+                res = cast(type, res)
+            return res
+        except Exception as e:
+            log(DEBUG, e)  # logging error to reproduce previous behaviour
+            raise e
 
     def get_properties(
         self, ins: common.GetPropertiesIns, timeout: Optional[float]
     ) -> common.GetPropertiesRes:
         """Returns client's properties."""
-        res = self._execute_deterministically_using_ray(
-            maybe_call_get_properties, timeout, get_properties_ins=ins
-        )
-        return cast(
-            common.GetPropertiesRes,
-            res,
+        return self._get_ray_future(
+            self.remote_client_proxy.get_properties.remote(ins, timeout),
+            timeout=timeout,
+            type=common.GetPropertiesRes,
         )
 
     def get_parameters(
         self, ins: common.GetParametersIns, timeout: Optional[float]
     ) -> common.GetParametersRes:
         """Return the current local model parameters."""
-        res = self._execute_deterministically_using_ray(
-            maybe_call_get_parameters, timeout, get_parameters_ins=ins
-        )
-        return cast(
-            common.GetParametersRes,
-            res,
+        return self._get_ray_future(
+            self.remote_client_proxy.get_parameters.remote(ins, timeout),
+            timeout=timeout,
+            type=common.GetParametersRes,
         )
 
     def fit(self, ins: common.FitIns, timeout: Optional[float]) -> common.FitRes:
         """Train model parameters on the locally held dataset."""
-        res = self._execute_deterministically_using_ray(
-            maybe_call_fit, timeout, fit_ins=ins
-        )
-        return cast(
-            common.FitRes,
-            res,
+        return self._get_ray_future(
+            self.remote_client_proxy.fit.remote(ins, timeout),
+            timeout=timeout,
+            type=common.FitRes,
         )
 
     def evaluate(
         self, ins: common.EvaluateIns, timeout: Optional[float]
     ) -> common.EvaluateRes:
         """Evaluate model parameters on the locally held dataset."""
-        res = self._execute_deterministically_using_ray(
-            maybe_call_evaluate, timeout, evaluate_ins=ins
-        )
-        return cast(
-            common.EvaluateRes,
-            res,
+        return self._get_ray_future(
+            self.remote_client_proxy.evaluate.remote(ins, timeout),
+            timeout=timeout,
+            type=common.EvaluateRes,
         )
 
     def reconnect(
         self, ins: common.ReconnectIns, timeout: Optional[float]
     ) -> common.DisconnectRes:
         """Disconnect and (optionally) reconnect later."""
-        return common.DisconnectRes(reason="")  # Nothing to do here (yet)
-
-    def _execute_deterministically_using_ray(
-        self,
-        fn: Callable[[], None],
-        timeout: Optional[float],
-        *args,
-        **kwargs,
-    ):
-        """Execute the given function deterministically using Ray."""
-        future_fn_res = call_ray_with_seeded_client.options(  # type: ignore
-            **self.resources,
-        ).remote(
-            self._get_client_fn(), self._get_current_seed_fn(), fn, *args, **kwargs
+        return self._get_ray_future(
+            self.remote_client_proxy.reconnect.remote(ins, timeout),
+            timeout=timeout,
+            type=common.DisconnectRes,
         )
-        try:
-            return ray.get(future_fn_res, timeout=timeout)
-        except Exception as ex:
-            log(DEBUG, ex)
-            raise ex
 
 
 @ray.remote
-def call_ray_with_seeded_client(
-    client_fn: ClientFn,
-    seed_fn: Optional[Callable[[], None]],
-    fn: Callable[[Client], common.FitRes],
-    *args,
-    **kwargs,
-) -> common.FitRes:
-    """Execute the given function remotely."""
-    if seed_fn is not None:
-        seed_fn()
-    client: Client = to_client(client_like=client_fn())
-    return fn(client, *args, **kwargs)
+class _RemoteRayClientProxy(ClientProxy):
+    """The remote part of the RayClientProxy.
+
+    Keeps track of it's rng for reproducibility.
+    """
+
+    def __init__(
+        self,
+        client_fn: ClientFn,
+        cid: str,
+        seed_fn: Optional[Callable[[int], None]],
+        seed: int,
+    ):
+        super().__init__(cid)
+        self.client_fn = client_fn
+        self.seed_fn = seed_fn
+        if self.seed_fn is not None:
+            # Create a RNG for this client, seeded using the global RNG
+            self.rng = random.Random()
+            self.rng.seed(seed)
+        else:
+            self.rng = None
+
+    def _get_client(self):
+        return to_client(client_like=self.client_fn(self.cid))
+
+    def _set_seeds(self):
+        if self.seed_fn is not None:
+            seed = self.rng.randint(0, MAX_SEED_SIZE)
+            self.seed_fn(seed)
+
+    def get_properties(
+        self, ins: common.GetPropertiesIns, timeout: Optional[float]
+    ) -> common.GetPropertiesRes:
+        """Returns client's properties."""
+        self._set_seeds()
+        return maybe_call_get_properties(self._get_client(), ins)
+
+    def get_parameters(
+        self, ins: common.GetParametersIns, timeout: Optional[float]
+    ) -> common.GetParametersRes:
+        """Return the current local model parameters."""
+        self._set_seeds()
+        return maybe_call_get_parameters(self._get_client(), ins)
+
+    def fit(self, ins: common.FitIns, timeout: Optional[float]) -> common.FitRes:
+        """Train model parameters on the locally held dataset."""
+        self._set_seeds()
+        return maybe_call_fit(self._get_client(), ins)
+
+    def evaluate(
+        self, ins: common.EvaluateIns, timeout: Optional[float]
+    ) -> common.EvaluateRes:
+        """Evaluate model parameters on the locally held dataset."""
+        self._set_seeds()
+        return maybe_call_evaluate(self._get_client(), ins)
+
+    def reconnect(
+        self, ins: common.ReconnectIns, timeout: Optional[float]
+    ) -> common.DisconnectRes:
+        """Disconnect and (optionally) reconnect later."""
+        return common.DisconnectRes(reason="")  # Nothing to do here (yet)
