@@ -21,7 +21,6 @@ from logging import ERROR, INFO
 from typing import Any, Callable, Dict, List, Optional
 
 import ray
-
 from flwr.client.client import Client
 from flwr.common import EventType, event
 from flwr.common.logger import log
@@ -32,7 +31,7 @@ from flwr.server.history import History
 from flwr.server.strategy import Strategy
 from flwr.simulation.ray_transport.ray_client_proxy import RayClientProxy
 
-INVALID_ARGUMENTS_START_SIMULATION = """
+INVALID_ARGUMENTS_START_SIMULATION_CLIENTS = """
 INVALID ARGUMENTS ERROR
 
 Invalid Arguments in method:
@@ -44,10 +43,13 @@ Invalid Arguments in method:
     clients_ids: Optional[List[str]] = None,
     client_resources: Optional[Dict[str, float]] = None,
     server: Optional[Server] = None,
-    config: ServerConfig = None,
+    config: Optional[ServerConfig] = None,
     strategy: Optional[Strategy] = None,
     client_manager: Optional[ClientManager] = None,
     ray_init_args: Optional[Dict[str, Any]] = None,
+    keep_initialised: Optional[bool] = False,
+    seed_fn: Optional[Callable[[int], None]] = None,
+    seed: Optional[int] = None,
 ) -> None:`
 
 REASON:
@@ -58,13 +60,14 @@ REASON:
         - `len(clients_ids)` == `num_clients`
 
 """
+INVALID_ARGUMENTS_START_SIMULATION_SEED = """
+INVALID ARGUMENTS ERROR
 
+Invalid Arguments in method:
 
-def start_simulation(  # pylint: disable=too-many-arguments
+`start_simulation(
     *,
     client_fn: Callable[[str], Client],
-    seed_fn: Callable[[int], None],
-    seed: int,
     num_clients: Optional[int] = None,
     clients_ids: Optional[List[str]] = None,
     client_resources: Optional[Dict[str, float]] = None,
@@ -74,6 +77,31 @@ def start_simulation(  # pylint: disable=too-many-arguments
     client_manager: Optional[ClientManager] = None,
     ray_init_args: Optional[Dict[str, Any]] = None,
     keep_initialised: Optional[bool] = False,
+    seed_fn: Optional[Callable[[int], None]] = None,
+    seed: Optional[int] = None,
+) -> None:`
+
+REASON:
+    Method requires:
+        - `seed`[int] and `seed_fn`[Callable[[int], None]]
+        to be either both set or both None.
+"""
+
+
+def start_simulation(  # pylint: disable=too-many-arguments
+    *,
+    client_fn: Callable[[str], Client],
+    num_clients: Optional[int] = None,
+    clients_ids: Optional[List[str]] = None,
+    client_resources: Optional[Dict[str, float]] = None,
+    server: Optional[Server] = None,
+    config: Optional[ServerConfig] = None,
+    strategy: Optional[Strategy] = None,
+    client_manager: Optional[ClientManager] = None,
+    ray_init_args: Optional[Dict[str, Any]] = None,
+    keep_initialised: Optional[bool] = False,
+    seed_fn: Optional[Callable[[int], None]] = None,
+    seed: Optional[int] = None,
 ) -> History:
     """Start a Ray-based Flower simulation server.
 
@@ -155,14 +183,14 @@ def start_simulation(  # pylint: disable=too-many-arguments
     cids: List[str]
     if clients_ids is not None:
         if (num_clients is not None) and (len(clients_ids) != num_clients):
-            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION)
-            sys.exit()
+            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
+            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
         else:
             cids = clients_ids
     else:
         if num_clients is None:
-            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION)
-            sys.exit()
+            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
+            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
         else:
             cids = [str(x) for x in range(num_clients)]
 
@@ -184,12 +212,19 @@ def start_simulation(  # pylint: disable=too-many-arguments
         "Flower VCE: Ray initialized with resources: %s",
         ray.cluster_resources(),
     )
+    if seed is not None:
+        if seed_fn is None:
+            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
+            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
 
-    # Set seed for everything running in main thread
-    seed_fn(seed)
+        # Set seed for everything running in main thread
+        seed_fn(seed)
 
-    # Set seed for random sampling
-    random.seed(seed)
+        # Set seed for random sampling
+        random.seed(seed)
+    elif seed_fn is not None:
+        log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
+        raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
 
     # Register one RayClientProxy object for each client with the ClientManager
     resources = client_resources if client_resources is not None else {}
