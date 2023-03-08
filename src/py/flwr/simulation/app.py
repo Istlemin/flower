@@ -15,10 +15,10 @@
 """Flower simulation app."""
 
 
+import random
 import sys
 from logging import ERROR, INFO
 from typing import Any, Callable, Dict, List, Optional
-import random
 
 import ray
 
