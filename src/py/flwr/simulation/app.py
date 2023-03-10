@@ -21,7 +21,6 @@ from logging import ERROR, INFO
 from typing import Any, Callable, Dict, List, Optional
 
 import ray
-
 from flwr.client.client import Client
 from flwr.common import EventType, event
 from flwr.common.logger import log
@@ -30,7 +29,7 @@ from flwr.server.app import ServerConfig, _fl, _init_defaults
 from flwr.server.client_manager import ClientManager
 from flwr.server.history import History
 from flwr.server.strategy import Strategy
-from flwr.simulation.ray_transport.ray_client_proxy import RayClientProxy
+from flwr.simulation.backend.ray_client_proxy import RayClientProxy
 
 INVALID_ARGUMENTS_START_SIMULATION_CLIENTS = """
 INVALID ARGUMENTS ERROR
