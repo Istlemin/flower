@@ -41,12 +41,15 @@ Invalid Arguments in method:
     client_fn: Callable[[str], Client],
     num_clients: Optional[int] = None,
     clients_ids: Optional[List[str]] = None,
-    client_resources: Optional[Dict[str, float]] = None,
+    client_resources: Optional[Dict[str, float]] = {},
     server: Optional[Server] = None,
     config: Optional[ServerConfig] = None,
     strategy: Optional[Strategy] = None,
     client_manager: Optional[ClientManager] = None,
-    ray_init_args: Optional[Dict[str, Any]] = None,
+    ray_init_args: Optional[Dict[str, Any]] = {
+        "ignore_reinit_error": True,
+        "include_dashboard": False,
+    },
     keep_initialised: Optional[bool] = False,
     seed_fn: Optional[Callable[[int], None]] = None,
     seed: Optional[int] = None,
@@ -70,12 +73,15 @@ Invalid Arguments in method:
     client_fn: Callable[[str], Client],
     num_clients: Optional[int] = None,
     clients_ids: Optional[List[str]] = None,
-    client_resources: Optional[Dict[str, float]] = None,
+    client_resources: Optional[Dict[str, float]] = {},
     server: Optional[Server] = None,
     config: Optional[ServerConfig] = None,
     strategy: Optional[Strategy] = None,
     client_manager: Optional[ClientManager] = None,
-    ray_init_args: Optional[Dict[str, Any]] = None,
+    ray_init_args: Optional[Dict[str, Any]] = {
+        "ignore_reinit_error": True,
+        "include_dashboard": False,
+    },
     keep_initialised: Optional[bool] = False,
     seed_fn: Optional[Callable[[int], None]] = None,
     seed: Optional[int] = None,
@@ -93,12 +99,15 @@ def start_simulation(  # pylint: disable=too-many-arguments
     client_fn: Callable[[str], Client],
     num_clients: Optional[int] = None,
     clients_ids: Optional[List[str]] = None,
-    client_resources: Optional[Dict[str, float]] = None,
+    client_resources: Optional[Dict[str, float]] = {},
     server: Optional[Server] = None,
     config: Optional[ServerConfig] = None,
     strategy: Optional[Strategy] = None,
     client_manager: Optional[ClientManager] = None,
-    ray_init_args: Optional[Dict[str, Any]] = None,
+    ray_init_args: Optional[Dict[str, Any]] = {
+        "ignore_reinit_error": True,
+        "include_dashboard": False,
+    },
     keep_initialised: Optional[bool] = False,
     seed_fn: Optional[Callable[[int], None]] = None,
     seed: Optional[int] = None,
@@ -124,7 +133,7 @@ def start_simulation(  # pylint: disable=too-many-arguments
         List `client_id`s for each client. This is only required if
         `num_clients` is not set. Setting both `num_clients` and `clients_ids`
         with `len(clients_ids)` not equal to `num_clients` generates an error.
-    client_resources : Optional[Dict[str, float]] (default: None)
+    client_resources : Optional[Dict[str, float]] (default: {})
         CPU and GPU resources for a single client. Supported keys are
         `num_cpus` and `num_gpus`. Example: `{"num_cpus": 4, "num_gpus": 1}`.
         To understand the GPU utilization caused by `num_gpus`, consult the Ray
@@ -143,17 +152,30 @@ def start_simulation(  # pylint: disable=too-many-arguments
         An implementation of the abstract base class `flwr.server.ClientManager`.
         If no implementation is provided, then `start_simulation` will use
         `flwr.server.client_manager.SimpleClientManager`.
-    ray_init_args : Optional[Dict[str, Any]] (default: None)
+    ray_init_args : Optional[Dict[str, Any]] (default: { "ignore_reinit_error": True, "include_dashboard": False })
         Optional dictionary containing arguments for the call to `ray.init`.
-        If ray_init_args is None (the default), Ray will be initialized with
-        the following default args:
-
-        { "ignore_reinit_error": True, "include_dashboard": False }
 
         An empty dictionary can be used (ray_init_args={}) to prevent any
         arguments from being passed to ray.init.
     keep_initialised: Optional[bool] (default: False)
         Set to True to prevent `ray.shutdown()` in case `ray.is_initialized()=True`.
+    seed_fn: Optional[Callable[[int], None]] (default: None)
+        A function that takes a single int argument called `seed` and sets the
+        seed for all random number generators used by your code.
+        If `seed_fn` is not set, then `seed` must be not set and
+        the simulation will be non-deterministic.
+        An example of a seed_fn is:
+        ```
+        def set_seed(seed: int) -> None:
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+        ```
+
+    seed: Optional[int] (default: None)
+        The seed for all random number generators used by your code.
+        If `seed` is not set, then `seed_fn` must be not set and
+        the simulation will be non-deterministic. Seed must be set if seed_fn is set.
 
     Returns
     -------
@@ -180,51 +202,30 @@ def start_simulation(  # pylint: disable=too-many-arguments
     )
 
     # clients_ids takes precedence
-    cids: List[str]
-    if clients_ids is not None:
-        if (num_clients is not None) and (len(clients_ids) != num_clients):
-            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
-            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
-        else:
-            cids = clients_ids
-    else:
-        if num_clients is None:
-            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
-            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
-        else:
-            cids = [str(x) for x in range(num_clients)]
+    if num_clients is not None and clients_ids is None:
+        clients_ids = [str(x) for x in range(num_clients)]
+    # if num_clients is not None, clients_ids must be set and have the same length
+    if num_clients is None or (len(clients_ids) != num_clients):
+        log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
+        raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_CLIENTS)
 
-    if seed is not None:
-        if seed_fn is None:
-            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
-            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
-
-    elif seed_fn is not None:
+    if (seed is None and seed_fn is not None) or (seed is not None and seed_fn is None):
         log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
         raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
 
-    # Default arguments for Ray initialization
-    if not ray_init_args:
-        ray_init_args = {
-            "ignore_reinit_error": True,
-            "include_dashboard": False,
-        }
-
-    # Register one RayClientProxy object for each client with the ClientManager
-    client_resources = client_resources if client_resources is not None else {}
     backend: Backend = RayBackend(
         client_resources=client_resources,
         ray_init_args=ray_init_args,
         keep_initialised=keep_initialised,
     )
+
     backend.init()
 
     if seed is not None:
+        # Make sure that seed is set for creating the clients, in case it is not covered by seed_fn
+        random.seed(seed)
         # Set seed for everything running in main thread
         seed_fn(seed)
-
-        # Set seed for random sampling
-        random.seed(seed)
 
     log(
         INFO,
@@ -232,7 +233,8 @@ def start_simulation(  # pylint: disable=too-many-arguments
         ray.cluster_resources(),
     )
 
-    for cid in cids:
+    # Register one RayClientProxy object for each client with the ClientManager
+    for cid in clients_ids:
         client_proxy = backend.get_client_proxy(client_fn, cid, seed_fn)
         initialized_server.client_manager().register(client=client_proxy)
 
