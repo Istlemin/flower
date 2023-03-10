@@ -21,11 +21,44 @@ from typing import Any, Callable, Dict, Optional, Type, cast
 import ray
 from flwr import common
 from flwr.client import ClientLike
+from flwr.client.client import Client
 from flwr.common.logger import log
 from flwr.server.client_proxy import ClientProxy
+from flwr.simulation.backend import Backend
 from flwr.simulation.backend.determistic import MAX_SEED_SIZE, DeterministicClientProxy
 
 ClientFn = Callable[[str], ClientLike]
+
+
+class RayBackend(Backend):
+    def __init__(
+        self,
+        client_resources: Optional[Dict[str, float]] = {},
+        ray_init_args={"ignore_reinit_error": True, "include_dashboard": False},
+        keep_initialised: bool = False,
+    ) -> None:
+        super().__init__()
+
+        self.client_resources = client_resources
+        self.ray_init_args = ray_init_args
+        self.keep_initialised = keep_initialised
+
+    def init(self) -> None:
+        if ray.is_initialized() and not self.keep_initialised:
+            ray.shutdown()
+        ray.init(**self.ray_init_args)
+
+    def shutdown(self) -> None:
+        if not self.keep_initialised:
+            ray.shutdown()
+
+    def get_client_proxy(
+        self,
+        client_fn: Callable[[str], Client],
+        cid: str,
+        seed_fn: Optional[Callable[[int], None]] = None,
+    ) -> ClientProxy:
+        return RayClientProxy(client_fn, cid, seed_fn, self.client_resources)
 
 
 class RayClientProxy(ClientProxy):
@@ -34,8 +67,8 @@ class RayClientProxy(ClientProxy):
     def __init__(
         self,
         client_fn: ClientFn,
-        seed_fn: Optional[Callable[[int], None]],
         cid: str,
+        seed_fn: Optional[Callable[[int], None]],
         resources: Dict[str, float],
     ):
         super().__init__(cid)

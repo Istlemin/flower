@@ -28,7 +28,8 @@ from flwr.server.app import ServerConfig, _fl, _init_defaults
 from flwr.server.client_manager import ClientManager
 from flwr.server.history import History
 from flwr.server.strategy import Strategy
-from flwr.simulation.backend.ray import RayClientProxy
+from flwr.simulation.backend import Backend
+from flwr.simulation.backend.ray_backend import RayBackend
 
 INVALID_ARGUMENTS_START_SIMULATION_CLIENTS = """
 INVALID ARGUMENTS ERROR
@@ -193,6 +194,15 @@ def start_simulation(  # pylint: disable=too-many-arguments
         else:
             cids = [str(x) for x in range(num_clients)]
 
+    if seed is not None:
+        if seed_fn is None:
+            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
+            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
+
+    elif seed_fn is not None:
+        log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
+        raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
+
     # Default arguments for Ray initialization
     if not ray_init_args:
         ray_init_args = {
@@ -200,40 +210,30 @@ def start_simulation(  # pylint: disable=too-many-arguments
             "include_dashboard": False,
         }
 
-    # Shut down Ray if it has already been initialized (unless asked not to)
-    if ray.is_initialized() and not keep_initialised:
-        ray.shutdown()
-
-    # Initialize Ray
-    ray.init(**ray_init_args)
-    log(
-        INFO,
-        "Flower VCE: Ray initialized with resources: %s",
-        ray.cluster_resources(),
+    # Register one RayClientProxy object for each client with the ClientManager
+    client_resources = client_resources if client_resources is not None else {}
+    backend: Backend = RayBackend(
+        client_resources=client_resources,
+        ray_init_args=ray_init_args,
+        keep_initialised=keep_initialised,
     )
-    if seed is not None:
-        if seed_fn is None:
-            log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
-            raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
+    backend.init()
 
+    if seed is not None:
         # Set seed for everything running in main thread
         seed_fn(seed)
 
         # Set seed for random sampling
         random.seed(seed)
-    elif seed_fn is not None:
-        log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
-        raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
 
-    # Register one RayClientProxy object for each client with the ClientManager
-    resources = client_resources if client_resources is not None else {}
+    log(
+        INFO,
+        "Flower VCE: Ray initialized with resources: %s",
+        ray.cluster_resources(),
+    )
+
     for cid in cids:
-        client_proxy = RayClientProxy(
-            client_fn=client_fn,
-            seed_fn=seed_fn,
-            cid=cid,
-            resources=resources,
-        )
+        client_proxy = backend.get_client_proxy(client_fn, cid, seed_fn)
         initialized_server.client_manager().register(client=client_proxy)
 
     # Start training
@@ -243,5 +243,5 @@ def start_simulation(  # pylint: disable=too-many-arguments
     )
 
     event(EventType.START_SIMULATION_LEAVE)
-
+    backend.shutdown()
     return hist
