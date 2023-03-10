@@ -19,6 +19,7 @@ from logging import DEBUG, INFO
 from typing import Any, Callable, Dict, Optional, Type, cast
 
 import ray
+
 from flwr import common
 from flwr.client import ClientLike
 from flwr.client.client import Client

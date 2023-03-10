@@ -35,7 +35,8 @@ MAX_SEED_SIZE = 10000000
 
 
 class DeterministicClientProxy(ClientProxy):
-    """This client can be run in any thread in a deterministic way, given it's seed.
+    """This client can be run in any thread in a deterministic way, given it's
+    seed.
 
     Keeps track of it's rng for reproducibility.
     """
