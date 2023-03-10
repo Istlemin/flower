@@ -1,4 +1,3 @@
-import random
 from typing import Any, Dict, List, Tuple
 
 import flwr as fl
@@ -9,7 +8,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from flwr.common.typing import Metrics
 from torch.utils.data import DataLoader
-from util import seed_everything
 
 
 class Net(nn.Module):
@@ -46,7 +44,6 @@ class FlowerNumpyClient(fl.client.NumPyClient):
         train_dataloader: DataLoader,
         val_dataloader: DataLoader,
         device=torch.device("cpu"),
-        #seed: int = 0,
     ) -> None:
         super().__init__()
         self.cid = cid
@@ -54,7 +51,6 @@ class FlowerNumpyClient(fl.client.NumPyClient):
         self.train_loader = train_dataloader
         self.val_loader = val_dataloader
         self.device = device
-        #self.seed = seed
 
     def get_parameters(self, config):
         return parameters_from_state_dict(self.model.state_dict())
@@ -68,14 +64,8 @@ class FlowerNumpyClient(fl.client.NumPyClient):
             {},
         )
 
-    # # def _update_seed(self):
-    #     seed_everything(self.seed)
-    #     self.seed = random.randint(0, 100000)
-
     def _train(self, config):
         self.model.train()
-        # self._update_seed()
-        #print("Before train:",sum([p.sum() for p in self.model.parameters()]).item())
         optimizer = optim.Adadelta(self.model.parameters(), lr=config["lr"])
         for epoch in range(config["epochs"]):
             for data, target in self.train_loader:
@@ -88,7 +78,6 @@ class FlowerNumpyClient(fl.client.NumPyClient):
 
     def evaluate(self, parameters, config):
         self.model.load_state_dict(state_dict_from_parameters(parameters, self.model))
-        # self._update_seed()
         loss, accuracy = self._evaluate(config)
         return loss, len(self.val_loader.dataset), {"accuracy": accuracy}
 
@@ -120,17 +109,18 @@ def state_dict_from_parameters(
     }
 
 
-def get_client_generator(train_dataloaders, val_dataloaders):
+def get_client_generator(
+    train_dataloaders, val_dataloaders, device=torch.device("cpu")
+):
     def get_client_from_cid(cid: str) -> fl.client.NumPyClient:
         assert int(cid) < len(train_dataloaders), "Client ID out of range"
         assert int(cid) < len(val_dataloaders), "Client ID out of range"
-        #seed_everything(int(cid))
         return FlowerNumpyClient(
             cid,
             Net(),
             train_dataloaders[int(cid)],
             val_dataloaders[int(cid)],
-            #seed=int(cid),
+            device=device,
         )
 
     return get_client_from_cid
