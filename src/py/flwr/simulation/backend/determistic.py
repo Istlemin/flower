@@ -12,14 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Ray-based Flower ClientProxy implementation."""
+"""DeterministicClientProxy implementation."""
 
 
 import random
-from logging import DEBUG
-from typing import Any, Callable, Dict, Optional, Type, cast
-
-import ray
+from typing import Callable, Optional
 
 from flwr import common
 from flwr.client import ClientLike, to_client
@@ -37,92 +34,8 @@ ClientFn = Callable[[str], ClientLike]
 MAX_SEED_SIZE = 10000000
 
 
-class RayClientProxy(ClientProxy):
-    """Flower client proxy which delegates work using Ray."""
-
-    def __init__(
-        self,
-        client_fn: ClientFn,
-        seed_fn: Optional[Callable[[int], None]],
-        cid: str,
-        resources: Dict[str, float],
-    ):
-        super().__init__(cid)
-        seed = random.randint(0, MAX_SEED_SIZE) if seed_fn is not None else None
-        self.remote_client_proxy = _RemoteRayClientProxy.options(**resources).remote(
-            client_fn,
-            cid,
-            seed_fn=seed_fn,
-            seed=seed,
-        )
-
-    def _get_ray_future(
-        self,
-        ray_future: ray.ObjectRef,
-        timeout: Optional[float] = None,
-        type: Optional[Type] = None,
-    ) -> Any:
-        try:
-            res = ray.get(ray_future, timeout=timeout)
-            if type is not None:
-                res = cast(type, res)
-            return res
-        except Exception as e:
-            log(DEBUG, e)  # logging error to reproduce previous behaviour
-            raise e
-
-    def get_properties(
-        self, ins: common.GetPropertiesIns, timeout: Optional[float]
-    ) -> common.GetPropertiesRes:
-        """Returns client's properties."""
-        return self._get_ray_future(
-            self.remote_client_proxy.get_properties.remote(ins, timeout),
-            timeout=timeout,
-            type=common.GetPropertiesRes,
-        )
-
-    def get_parameters(
-        self, ins: common.GetParametersIns, timeout: Optional[float]
-    ) -> common.GetParametersRes:
-        """Return the current local model parameters."""
-        return self._get_ray_future(
-            self.remote_client_proxy.get_parameters.remote(ins, timeout),
-            timeout=timeout,
-            type=common.GetParametersRes,
-        )
-
-    def fit(self, ins: common.FitIns, timeout: Optional[float]) -> common.FitRes:
-        """Train model parameters on the locally held dataset."""
-        return self._get_ray_future(
-            self.remote_client_proxy.fit.remote(ins, timeout),
-            timeout=timeout,
-            type=common.FitRes,
-        )
-
-    def evaluate(
-        self, ins: common.EvaluateIns, timeout: Optional[float]
-    ) -> common.EvaluateRes:
-        """Evaluate model parameters on the locally held dataset."""
-        return self._get_ray_future(
-            self.remote_client_proxy.evaluate.remote(ins, timeout),
-            timeout=timeout,
-            type=common.EvaluateRes,
-        )
-
-    def reconnect(
-        self, ins: common.ReconnectIns, timeout: Optional[float]
-    ) -> common.DisconnectRes:
-        """Disconnect and (optionally) reconnect later."""
-        return self._get_ray_future(
-            self.remote_client_proxy.reconnect.remote(ins, timeout),
-            timeout=timeout,
-            type=common.DisconnectRes,
-        )
-
-
-@ray.remote
-class _RemoteRayClientProxy(ClientProxy):
-    """The remote part of the RayClientProxy.
+class DeterministicClientProxy(ClientProxy):
+    """This client can be run in any thread in a deterministic way, given it's seed.
 
     Keeps track of it's rng for reproducibility.
     """
