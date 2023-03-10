@@ -29,6 +29,7 @@ from flwr.server.client_manager import ClientManager
 from flwr.server.history import History
 from flwr.server.strategy import Strategy
 from flwr.simulation.backend import Backend
+from flwr.simulation.backend.multiprocessing import MultiProcessingBackend
 from flwr.simulation.backend.ray_backend import RayBackend
 
 INVALID_ARGUMENTS_START_SIMULATION_CLIENTS = """
@@ -226,12 +227,6 @@ def start_simulation(  # pylint: disable=too-many-arguments
         random.seed(seed)
         # Set seed for everything running in main thread
         seed_fn(seed)
-
-    log(
-        INFO,
-        "Flower VCE: Ray initialized with resources: %s",
-        ray.cluster_resources(),
-    )
 
     # Register one RayClientProxy object for each client with the ClientManager
     for cid in clients_ids:

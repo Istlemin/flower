@@ -15,7 +15,7 @@
 """Ray-based Flower ClientProxy implementation."""
 
 import random
-from logging import DEBUG
+from logging import DEBUG, INFO
 from typing import Any, Callable, Dict, Optional, Type, cast
 
 import ray
@@ -47,6 +47,11 @@ class RayBackend(Backend):
         if ray.is_initialized() and not self.keep_initialised:
             ray.shutdown()
         ray.init(**self.ray_init_args)
+        log(
+            INFO,
+            "Flower VCE: Ray initialized with resources: %s",
+            ray.cluster_resources(),
+        )
 
     def shutdown(self) -> None:
         if not self.keep_initialised:
