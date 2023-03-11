@@ -1,5 +1,6 @@
-import torch.nn as nn
 import torch
+import torch.nn as nn
+
 
 class Net(nn.Module):
     def __init__(self):
@@ -25,26 +26,29 @@ class Net(nn.Module):
         x = self.fc2(x)
         output = F.log_softmax(x, dim=1)
         return output
-    
+
+
 def f(params):
     module = Net()
-    #module.share_memory()
-    module.load_state_dict({
-        k: torch.from_numpy(v) for k, v in zip(module.state_dict().keys(), params)
-    })
+    # module.share_memory()
+    module.load_state_dict(
+        {k: torch.from_numpy(v) for k, v in zip(module.state_dict().keys(), params)}
+    )
     return
+
 
 def test_stalling():
     params2 = [tensor.cpu().numpy() for tensor in Net().state_dict().values()]
     import torch.multiprocessing as mp
+
     with mp.Pool(1) as p:
-        #apply_async_dill(p,f,(params2,))
-        p.apply_async(f,(params2,)).get()
+        # apply_async_dill(p,f,(params2,))
+        p.apply_async(f, (params2,)).get()
 
 
-test_stalling()
+if __name__ == "__main__":
+    test_stalling()
 
-Net().load_state_dict(Net().state_dict())
+    Net().load_state_dict(Net().state_dict())
 
-test_stalling()
-
+    test_stalling()
