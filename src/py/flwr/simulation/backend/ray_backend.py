@@ -26,7 +26,10 @@ from flwr.client.client import Client
 from flwr.common.logger import log
 from flwr.server.client_proxy import ClientProxy
 from flwr.simulation.backend import Backend
-from flwr.simulation.backend.determistic import MAX_SEED_SIZE, DeterministicClientProxy
+from flwr.simulation.backend.deterministic import (
+    MAX_SEED_SIZE,
+    DeterministicClientProxy,
+)
 
 ClientFn = Callable[[str], ClientLike]
 

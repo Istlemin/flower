@@ -28,10 +28,23 @@ from flwr.client.client import (
 )
 from flwr.common.logger import log
 from flwr.server.client_proxy import ClientProxy
+from flwr.simulation.backend import Backend
 
 ClientFn = Callable[[str], ClientLike]
 
 MAX_SEED_SIZE = 10000000
+
+
+class SingleThreadedBackend(Backend):
+    def get_client_proxy(
+        self,
+        client_fn: Callable[[str], ClientLike],
+        cid: str,
+        seed_fn: Optional[Callable[[int], None]] = None,
+    ) -> ClientProxy:
+        return DeterministicClientProxy(
+            client_fn, cid, seed_fn, seed=random.randint(0, MAX_SEED_SIZE)
+        )
 
 
 class DeterministicClientProxy(ClientProxy):

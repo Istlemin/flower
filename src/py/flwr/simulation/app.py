@@ -19,8 +19,6 @@ import random
 from logging import ERROR, INFO
 from typing import Any, Callable, Dict, List, Optional
 
-import ray
-
 from flwr.client.client import Client
 from flwr.common import EventType, event
 from flwr.common.logger import log
@@ -113,6 +111,7 @@ def start_simulation(  # pylint: disable=too-many-arguments
     keep_initialised: Optional[bool] = False,
     seed_fn: Optional[Callable[[int], None]] = None,
     seed: Optional[int] = None,
+    backend: Optional[Backend] = None,
 ) -> History:
     """Start a Ray-based Flower simulation server.
 
@@ -215,12 +214,15 @@ def start_simulation(  # pylint: disable=too-many-arguments
         log(ERROR, INVALID_ARGUMENTS_START_SIMULATION_SEED)
         raise ValueError(INVALID_ARGUMENTS_START_SIMULATION_SEED)
 
-    backend: Backend = RayBackend(
-        client_resources=client_resources,
-        ray_init_args=ray_init_args,
-        keep_initialised=keep_initialised,
+    backend: Backend = (
+        RayBackend(
+            client_resources=client_resources,
+            ray_init_args=ray_init_args,
+            keep_initialised=keep_initialised,
+        )
+        if backend is None
+        else backend
     )
-
     backend.init()
 
     if seed is not None:
