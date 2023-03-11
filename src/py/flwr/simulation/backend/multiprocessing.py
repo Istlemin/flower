@@ -23,6 +23,7 @@ import pathos.multiprocessing as mp
 from flwr import common
 from flwr.client import ClientLike
 from flwr.server.client_proxy import ClientProxy
+from flwr.simulation.backend import Backend
 from flwr.simulation.backend.determistic import DeterministicClientProxy
 
 ClientFn = Callable[[str], ClientLike]
@@ -30,7 +31,7 @@ ClientFn = Callable[[str], ClientLike]
 MAX_SEED_SIZE = 10000000
 
 
-class MultiProcessingBackend:
+class MultiProcessingBackend(Backend):
     def __init__(self) -> None:
         self.processing_pool = None
 
