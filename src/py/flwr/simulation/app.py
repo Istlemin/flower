@@ -53,6 +53,7 @@ Invalid Arguments in method:
     keep_initialised: Optional[bool] = False,
     seed_fn: Optional[Callable[[int], None]] = None,
     seed: Optional[int] = None,
+    backend: Optional[Backend] = None,
 ) -> None:`
 
 REASON:
@@ -85,6 +86,7 @@ Invalid Arguments in method:
     keep_initialised: Optional[bool] = False,
     seed_fn: Optional[Callable[[int], None]] = None,
     seed: Optional[int] = None,
+    backend: Optional[Backend] = None,
 ) -> None:`
 
 REASON:
