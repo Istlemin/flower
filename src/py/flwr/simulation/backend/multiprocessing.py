@@ -20,7 +20,7 @@ import os
 from typing import Callable, Optional
 
 import dill
-import torch.multiprocessing as mp
+import multiprocessing as mp
 
 from flwr import common
 from flwr.client import ClientLike
