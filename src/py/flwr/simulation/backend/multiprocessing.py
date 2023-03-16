@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Ray-based Flower ClientProxy implementation."""
+"""Multiprocessing-based Flower ClientProxy implementation."""
 
 
-import random
+import multiprocessing as mp
 import os
+import random
 from typing import Callable, Optional
 
 import dill
-import multiprocessing as mp
 
 from flwr import common
 from flwr.client import ClientLike
@@ -41,7 +41,9 @@ def run_dilled_fn(fn, args):
 
 class MultiProcessingBackend(Backend):
     def __init__(self, num_processes=None) -> None:
-        self.num_processes = num_processes if num_processes is not None else os.cpu_count()
+        self.num_processes = (
+            num_processes if num_processes is not None else os.cpu_count()
+        )
         self.processing_pool = None
 
     def init(self) -> None:

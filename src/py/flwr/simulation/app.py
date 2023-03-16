@@ -28,7 +28,6 @@ from flwr.server.client_manager import ClientManager
 from flwr.server.history import History
 from flwr.server.strategy import Strategy
 from flwr.simulation.backend import Backend
-from flwr.simulation.backend.multiprocessing import MultiProcessingBackend
 from flwr.simulation.backend.ray_backend import RayBackend
 
 INVALID_ARGUMENTS_START_SIMULATION_CLIENTS = """
